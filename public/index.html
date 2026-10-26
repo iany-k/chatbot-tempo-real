@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Meu chatbot local</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 16px system-ui, sans-serif; background: #f3f4f6; color: #111827; }
+    main { max-width: 760px; margin: 32px auto; padding: 0 16px; }
+    h1 { font-size: 1.5rem; }
+    #chat { height: min(65vh, 600px); overflow-y: auto; background: white; border: 1px solid #d1d5db; border-radius: 12px; padding: 16px; }
+    .msg { margin: 12px 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+    .user { color: #075985; }
+    .bot { color: #166534; }
+    .error { color: #b91c1c; }
+    form { display: flex; gap: 8px; margin-top: 12px; }
+    input { flex: 1; min-width: 0; padding: 12px; border: 1px solid #9ca3af; border-radius: 8px; font: inherit; }
+    button { padding: 12px 18px; border: 0; border-radius: 8px; background: #2563eb; color: white; font: inherit; cursor: pointer; }
+    button:disabled { opacity: .55; cursor: wait; }
+    .hint { color: #4b5563; font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Meu chatbot local</h1>
+    <p class="hint">As respostas são geradas pelo modelo llama3.2 no Ollama neste computador.</p>
+    <div id="chat" aria-live="polite"></div>
+    <form id="form">
+      <input id="input" placeholder="Digite sua mensagem..." autocomplete="off" required />
+      <button id="send" type="submit">Enviar</button>
+    </form>
+  </main>
+  <script>
+    const form = document.querySelector("#form");
+    const input = document.querySelector("#input");
+    const chat = document.querySelector("#chat");
+    const send = document.querySelector("#send");
+    const messages = [];
+
+    function addMessage(label, text, className) {
+      const div = document.createElement("div");
+      div.className = `msg ${className}`;
+      div.textContent = `${label}: ${text}`;
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+      return div;
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = "";
+      send.disabled = true;
+      messages.push({ role: "user", content: text });
+      addMessage("Você", text, "user");
+      const reply = addMessage("Bot", "", "bot");
+
+      try {
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages }),
+        });
+        if (!response.ok || !response.body) {
+          const detail = await response.json().catch(() => ({}));
+          throw new Error(detail.error || "Erro ao chamar o servidor.");
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let answer = "";
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          answer += decoder.decode(value, { stream: true });
+          reply.textContent = `Bot: ${answer}`;
+          chat.scrollTop = chat.scrollHeight;
+        }
+        answer += decoder.decode();
+        messages.push({ role: "assistant", content: answer });
+      } catch (error) {
+        reply.classList.add("error");
+        reply.textContent = `Aviso: ${error.message} Verifique se o Ollama está rodando.`;
+        messages.pop();
+      } finally {
+        send.disabled = false;
+        input.focus();
+      }
+    });
+  </script>
+</body>
+</html>
